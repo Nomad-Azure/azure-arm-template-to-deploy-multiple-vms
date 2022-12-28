@@ -1,0 +1,293 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "location": {
+        "type": "string",
+        "allowedValues": [
+            "East US 2",
+			"North Europe",
+			"West Europe",
+            "Southeast Asia"
+        ],
+        "metadata": {
+          "description": "Location for the VMs"
+        }
+      },
+      "VMNames": {
+        "type": "array",
+        "metadata": {
+          "description": "Virtual Machine Names in List of String Format" 
+        }
+      },
+	   "SubscriptionId": {
+        "type": "string",
+		  "allowedValues": [
+            "Enter Subscription ID of the Azure Gallery"
+        ],
+        "metadata": {
+            "description": "VM Image Gallery Subscription ID"
+          }
+      },
+	   "ImageResourceGroupName": {
+        "type": "string",
+		"allowedValues": [
+            "Enter ResourceGroup Name of the Azure Gallery"
+        ],
+        "metadata": {
+            "description": "VM's Image Name"
+          }
+      },
+	  "GalleryName": {
+        "type": "string",
+		"allowedValues": [
+            "Enter Image Gallery Name"
+        ],
+        "metadata": {
+            "description": "VM's Image Gallery Name"
+          }
+      },
+	  "ImageName": {
+        "type": "string",
+		"allowedValues": [
+            "WindowsServer2016-Datacenter",
+			"WindowsServer2019-Datacenter"
+        ],
+        "metadata": {
+            "description": "VM's Image Name"
+          }
+      },
+	   "Version": {
+        "type": "string",
+		"allowedValues": [
+            "0.0.2",
+			"0.0.3",
+			"0.0.4",
+			"0.0.5",
+			"0.0.6",
+			"0.0.9"
+        ],
+        "metadata": {
+            "description": "VM's Image Version"
+          }
+      },
+
+      "vmSKU": {
+        "type": "array",
+        "metadata": {
+          "description": "VM Type in Azure: Standard_B2s or Standard_A2_v2 or Standard_F2s_v2, etc. in list of string"
+        }
+      },
+	   "VnetResourceGroup": {
+        "type": "string",
+		"allowedValues": [
+			"Enter Resource Group Name of Virtual Network"
+        ],
+        "metadata": {
+          "description": "Resource Group Name of Virtual Network"
+        }
+      },
+      "virtualNetworkName": {
+        "type": "string",
+		"allowedValues": [
+			"Enter Existing Virtual Network Name"
+        ],
+        "metadata": {
+          "description": "Existing Virtual Network Name"
+        }
+      },
+	   "subnetName": {
+        "type": "string",
+		"allowedValues": [
+			"Enter Existing Subnet Name"
+        ],
+        "metadata": {
+          "description": "Existing Subnet Name"
+        }
+      },
+      "sizeOfDataDisksInGB": {
+        "type": "array",
+        "metadata": {
+            "description": "Managed disks Size in list of string format"
+        }
+    },
+    "numberOfDataDisks": {
+        "type": "int"
+    },
+      "adminUsername": {
+        "type": "string",
+        "metadata": {
+          "description": "Username for the local admin in the Virtual Machine."
+        }
+      },
+      "authenticationType": {
+        "type": "string",
+        "defaultValue": "password",
+        "allowedValues": [
+          "sshPublicKey",
+          "password"
+        ],
+        "metadata": {
+          "description": "Type of authentication to use on the Virtual Machine."
+        }
+      },
+      "adminPasswordOrKey": {
+        "type": "securestring",
+        "metadata": {
+          "description": "SSH Key or password for the Virtual Machine."
+        }
+      },      
+      "installscripturi": {
+        "type": "string",
+		"allowedValues": [
+          "Enter URL / Path where the script is stored"
+        ]		
+      },
+      "command2exec": {
+        "type": "string",
+		"allowedValues": [
+          "powershell.exe -ExecutionPolicy Unrestricted -File filename.ps1"
+        ]	
+      }
+    },
+    "variables": {
+      "storageAccountName": "[concat('diags', uniquestring(resourceGroup().id))]",
+      "nicName": "myVMNic",
+      "networkSecurityGroupName": "allowRemoting",
+      "lbName": "multiVMLB",
+      "subnetRef": "[resourceId(parameters('VnetResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))]",
+      "VMImageRef": "[resourceId(parameters('SubscriptionId'), parameters('ImageResourceGroupName'), 'Microsoft.Compute/galleries/images/versions', parameters('GalleryName'), parameters('ImageName'), parameters('Version'))]",
+      "lbID": "[resourceId('Microsoft.Network/loadBalancers', variables('lbName'))]",
+      "frontEndIPConfigID": "[concat(variables('lbID'), '/frontendIPConfigurations/loadBalancerFrontend')]",
+      "inboundNatRuleName": "remoting",
+      "windowsImage": {
+        "publisher": "MicrosoftWindowsServer",
+        "offer": "WindowsServer",
+        "sku": "2016-Datacenter",
+        "version": "latest"
+      },
+      "linuxImage": {
+        "publisher": "Canonical",
+        "offer": "UbuntuServer",
+        "sku": "16.04.0-LTS",
+        "version": "latest"
+      },
+      "linuxConfiguration": {
+        "disablePasswordAuthentication": true,
+        "ssh": {
+          "publicKeys": [
+            {
+              "path": "[concat('/home/', parameters('adminUsername'), '/.ssh/authorized_keys')]",
+              "keyData": "[parameters('adminPasswordOrKey')]"
+            }
+          ]
+        }
+      }
+    },
+    "resources": [
+      
+      
+      {
+        "apiVersion": "2017-08-01",
+        "type": "Microsoft.Network/networkInterfaces",
+        "name": "[concat(parameters('VMNames')[copyIndex()], '-nic')]",
+        "location": "[parameters('location')]",
+        "copy": {
+          "name": "nicLoop",
+          "count": "[length(parameters('VMNames'))]"
+        },
+        "dependsOn": [],
+        "properties": {
+          "ipConfigurations": [
+            {
+              "name": "ipconfig1",
+              "properties": {
+                "privateIPAllocationMethod": "Dynamic",
+                "subnet": {
+                  "id": "[variables('subnetRef')]"
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "apiVersion": "2018-06-01",
+        "type": "Microsoft.Compute/virtualMachines",
+        "name": "[parameters('VMNames')[copyIndex()]]",
+        "copy": {
+          "name": "virtualMachineLoop",
+          "count": "[length(parameters('VMNames'))]"
+        },
+        "location": "[parameters('location')]",
+        "dependsOn": [
+          "nicLoop"
+        ],
+        "properties": {
+          "hardwareProfile": {
+            "vmSize": "[parameters('vmSKU')[copyIndex()]]"
+          },
+          "osProfile": {
+            "computerName": "[parameters('VMNames')[copyIndex()]]",
+            "adminUsername": "[parameters('adminUsername')]",
+            "adminPassword": "[parameters('adminPasswordOrKey')]"
+          },
+          "storageProfile": {
+            "imageReference": {
+            "id": "[variables('VMImageRef')]"
+            },
+            "osDisk": {
+              "createOption": "FromImage"
+            },
+            "copy": [
+                {
+                    "name": "dataDisks",
+                    "count": "[parameters('numberOfDataDisks')]",
+                    "input": {
+                        "caching": "ReadOnly",
+                        "diskSizeGB": "[parameters('sizeOfDataDisksInGB')[copyIndex()]]",
+                        "lun": "[copyIndex('dataDisks')]",
+                        "name": "[concat(parameters('VMNames')[copyIndex()], '-datadisk', copyIndex('dataDisks'))]",
+                        "createOption": "Empty"
+                    }
+                }
+            ]
+          },
+          "networkProfile": {
+            "networkInterfaces": [
+              {
+                "id": "[resourceId('Microsoft.Network/networkInterfaces',concat(parameters('VMNames')[copyIndex()], '-nic'))]"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "apiVersion": "2018-06-01",
+        "copy": {
+          "name": "ConfigureServerLoop",
+          "count": "[length(parameters('VMNames'))]"
+        },
+        "type": "Microsoft.Compute/virtualMachines/extensions",
+        "name": "[concat(parameters('VMNames')[copyIndex()],'/ConfigureServer')]",
+        "location": "[parameters('location')]",
+        "dependsOn": [
+            "[concat('Microsoft.Compute/virtualMachines/', parameters('VMNames')[copyIndex()])]"
+        ],
+        "properties": {
+            "publisher": "Microsoft.Compute",
+            "type": "CustomScriptExtension",
+            "typeHandlerVersion": "1.10",
+            "autoUpgradeMinorVersion": true,
+            "settings": {
+                "fileUris": [
+                   "[parameters('installscripturi')]"
+                ],
+                "commandToExecute": "[parameters('command2exec')]"
+            },
+            "protectedSettings": {
+            }
+        }
+      }
+    ]
+  }
